@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex, nofollow">
+  <title>RSCI Operations System (SQL prototype)</title>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="icon" href="img/logo.png">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body class="login-page">
+  <header class="login-hero">
+    <img src="img/logo.png" alt="Rivera-Sarvida Construction Inc.">
+    <div>
+      <h1>Rivera-Sarvida Construction Inc.<br>Operations System</h1>
+    </div>
+  </header>
+  <div class="login-body">
+    <form class="login-box" id="f" autocomplete="on">
+      <h2>Sign in</h2>
+      <label for="email">Email</label>
+      <input id="email" type="email" required autocomplete="username">
+      <label for="pw">Password</label>
+      <input id="pw" type="password" required autocomplete="current-password">
+      <div class="err" id="err" role="alert"></div>
+      <button class="btn" style="width:100%;margin-top:6px">Sign in</button>
+      <div class="quick">
+        <p>Quick fill</p>
+        <div id="quick"></div>
+      </div>
+    </form>
+  </div>
+  <script>
+    const demo = [['Boss','boss'],['OM','om'],['Engineer','engineer'],['PO Officer','po'],['Accountant','accountant'],['Inventory','inventory']];
+    const quick = document.getElementById('quick');
+    demo.forEach(([label, user]) => {
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'chip'; b.textContent = label;
+      b.onclick = () => { email.value = user + '@rsci.test'; pw.value = 'Password123!'; };
+      quick.appendChild(b);
+    });
+    if (sessionStorage.getItem('token')) location.href = 'app.html';
+    document.getElementById('f').onsubmit = async (e) => {
+      e.preventDefault();
+      err.textContent = '';
+      try {
+        const r = await fetch('/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: email.value, password: pw.value }) });
+        const data = await r.json();
+        if (!r.ok) throw new Error(data.error || 'Sign-in failed');
+        sessionStorage.setItem('token', data.token);
+        sessionStorage.setItem('user', JSON.stringify(data.user));
+        location.href = 'app.html';
+      } catch (ex) { err.textContent = ex.message; }
+    };
+  </script>
+</body>
+</html>
