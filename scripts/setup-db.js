@@ -7,7 +7,7 @@ const mysql = require('mysql2/promise');
 const bcrypt = require('bcryptjs');
 
 const { DB_HOST = '127.0.0.1', DB_PORT = 3306, DB_ROOT_USER = 'root', DB_ROOT_PASSWORD = '',
-        DB_ROLE_PASSWORD = 'Rsci#Demo2026', ENC_KEY } = process.env;
+  DB_ROLE_PASSWORD = 'Rsci#Demo2026', ENC_KEY } = process.env;
 const DEMO_LOGIN_PASSWORD = 'Password123!';
 const BULK_EXPENSES = 100000;
 
@@ -30,13 +30,14 @@ async function main() {
   console.log('Seeding users...');
   const hash = await bcrypt.hash(DEMO_LOGIN_PASSWORD, 10);
   const users = [
-    ['Boss Rivera',        'boss@rsci.test',       'boss',       '0917-000-0001'],
-    ['Olivia Manalo (OM)', 'om@rsci.test',         'om',         '0917-000-0002'],
-    ['Engr. Juan Dela Cruz','engineer@rsci.test',  'engineer',   '0917-000-0003'],
-    ['Paolo Reyes',        'po@rsci.test',         'po_officer', '0917-000-0004'],
-    ['Alma Santos',        'accountant@rsci.test', 'accountant', '0917-000-0005'],
-    ['Ian Bautista',       'inventory@rsci.test',  'inventory',  '0917-000-0006'],
-    ['Engr. Maria Lopez',  'engineer2@rsci.test',  'engineer',   '0917-000-0007'],
+    ['Boss Malupiton', 'boss@rsci.test', 'boss', '0917-000-0001'],
+    ['Sir Ar-Jay', 'om@rsci.test', 'om', '0917-000-0002'],
+    ['Engr. Josef', 'engineer@rsci.test', 'engineer', '0917-000-0003'],
+    ['Officer Renz', 'po@rsci.test', 'po_officer', '0917-000-0004'],
+    ['Maam Fauna', 'accountant@rsci.test', 'accountant', '0917-000-0005'],
+    ['Sir John', 'inventory@rsci.test', 'inventory', '0917-000-0006'],
+    ['Engr. Andrea', 'engineer2@rsci.test', 'engineer', '0917-000-0007'],
+    ['Maam Shanea', 'admin@rsci.test', 'admin', '0917-000-0008'],
   ];
   for (const [name, email, role, phone] of users) {
     await root.query(
@@ -49,10 +50,10 @@ async function main() {
     `INSERT INTO projects (company, name) VALUES
      ('Ayala Land','Tower 2 Fit-out'),('SM Prime','Mall Annex Phase 1'),('Megaworld','Uptown Parksuites'),
      ('DMCI','Riverfront Residences'),('Internal','Warehouse Repairs')`);
-  const vendors = [['Hardware Depot','0917-555-0101','123-456-789-000'],
-                   ['Steel Masters Inc.','0917-555-0102','234-567-890-000'],
-                   ['Pioneer Electrical','0917-555-0103','345-678-901-000'],
-                   ['Paint & Tools Hub','0917-555-0104','456-789-012-000']];
+  const vendors = [['Hardware Depot', '0917-555-0101', '123-456-789-000'],
+  ['Steel Masters Inc.', '0917-555-0102', '234-567-890-000'],
+  ['Pioneer Electrical', '0917-555-0103', '345-678-901-000'],
+  ['Paint & Tools Hub', '0917-555-0104', '456-789-012-000']];
   for (const [n, c, tin] of vendors) {
     await root.query(`INSERT INTO vendors (name, contact, tin_enc) VALUES (?, ?, ${aes(tin)})`, [n, c]);
   }
@@ -60,8 +61,8 @@ async function main() {
   const tickets = [
     [1, 3, 'urgent', 'Pending Boss Approval', [['Cement 40kg', 50, 'bag'], ['Sand', 5, 'cu.m']]],
     [2, 7, 'normal', 'Pending Boss Approval', [['Steel bar 12mm', 100, 'pc']]],
-    [3, 3, 'normal', 'Approved for PO',       [['Cement 40kg', 10, 'bag']]],
-    [4, 7, 'urgent', 'Approved for PO',       [['THHN wire 3.5mm', 20, 'roll'], ['Conduit 20mm', 40, 'pc']]],
+    [3, 3, 'normal', 'Approved for PO', [['Cement 40kg', 10, 'bag']]],
+    [4, 7, 'urgent', 'Approved for PO', [['THHN wire 3.5mm', 20, 'roll'], ['Conduit 20mm', 40, 'pc']]],
   ];
   for (const [proj, by, urg, status, items] of tickets) {
     const [r] = await root.query(
@@ -76,7 +77,7 @@ async function main() {
   // Opening balances. THHN wire and conduit are below what ticket 4 asks for, so the
   // availability label shows "Only N in stock" there.
   const stock = [['Cement 40kg', 'bag', 120], ['Sand', 'cu.m', 30], ['Steel bar 12mm', 'pc', 250],
-                 ['THHN wire 3.5mm', 'roll', 8], ['Conduit 20mm', 'pc', 15]];
+  ['THHN wire 3.5mm', 'roll', 8], ['Conduit 20mm', 'pc', 15]];
   for (const [name, unit, qty] of stock) {
     const [r] = await root.query('INSERT INTO inventory (item_name, unit, qty_on_hand) VALUES (?, ?, ?)', [name, unit, qty]);
     await root.query(`INSERT INTO inventory_log (inventory_id, change_qty, reason, created_by) VALUES (?, ?, 'Opening balance', 6)`, [r.insertId, qty]);
@@ -90,7 +91,7 @@ async function main() {
     for (let i = 0; i < 5000; i++) {
       const d = new Date(start + Math.floor(Math.random() * span)).toISOString().slice(0, 10);
       rows.push([1 + Math.floor(Math.random() * 5), null, cats[Math.floor(Math.random() * cats.length)],
-                 'Bulk seed', (50 + Math.random() * 9950).toFixed(2), d, 5]);
+        'Bulk seed', (50 + Math.random() * 9950).toFixed(2), d, 5]);
     }
     await root.query('INSERT INTO expenses (project_id, po_id, category, description, amount, expense_date, created_by) VALUES ?', [rows]);
   }

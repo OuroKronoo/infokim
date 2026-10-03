@@ -13,7 +13,7 @@ CREATE TABLE users (
   name          VARCHAR(100)  NOT NULL,
   email         VARCHAR(150)  NOT NULL UNIQUE,
   password_hash VARCHAR(100)  NOT NULL,
-  role          ENUM('boss','om','engineer','po_officer','accountant','inventory') NOT NULL,
+  role          ENUM('boss','om','engineer','po_officer','accountant','inventory','admin') NOT NULL,
   phone_enc     VARBINARY(255) NULL,
   created_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB;

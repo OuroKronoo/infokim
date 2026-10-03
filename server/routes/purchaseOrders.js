@@ -1,7 +1,7 @@
 // Criterion 2: the workflows below each run as ONE transaction.
 const router = require('express').Router();
 const { requireRole } = require('../auth');
-const { encrypt, withTransaction, logActivity, HttpError } = require('../db');
+const { encrypt, decrypt, withTransaction, logActivity, HttpError } = require('../db');
 const { wrap, validateItems } = require('../util');
 const { stockIn } = require('../stock');
 
@@ -46,7 +46,19 @@ router.get('/:id', wrap(async (req, res) => {
   const [items] = await req.db.query(
     'SELECT description, qty, unit, unit_price, ROUND(qty * unit_price, 2) AS line_total FROM po_items WHERE po_id = ?',
     [req.params.id]);
-  res.json({ ...rows[0], items });
+  // The check number is stored AES-encrypted; only the roles holding SELECT on payments can read it.
+  const canSeePayment = ['boss', 'accountant'].includes(req.user.role);
+  let payment = null;
+  if (canSeePayment) {
+    const [[p]] = await req.db.query(
+      `SELECT amount, ${decrypt('check_no_enc')} AS check_no, paid_at FROM payments WHERE po_id = ?`, [req.params.id]);
+    payment = p || null;
+  } else if (req.user.role === 'admin') {
+    // The administrator oversees the payment (amount, date) but holds no grant on check_no_enc.
+    const [[p]] = await req.db.query('SELECT amount, paid_at FROM payments WHERE po_id = ?', [req.params.id]);
+    payment = p ? { ...p, check_no: null } : null;
+  }
+  res.json({ ...rows[0], items, payment, paymentRestricted: !canSeePayment });
 }));
 
 // PO Officer: P.O. header + items + ticket status flip + audit entry.

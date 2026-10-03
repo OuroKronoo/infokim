@@ -4,32 +4,38 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="robots" content="noindex, nofollow">
-  <title>RSCI Operations System (SQL prototype)</title>
-  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+  <title>RSCI Operations System</title>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="icon" href="img/logo.png">
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
   <div class="shell">
     <aside class="side">
-      <img src="img/logo.png" alt="">
-      <div class="co">Rivera-Sarvida<br>Construction Inc.</div>
-      <nav id="nav"></nav>
+      <div class="brand">
+        <div class="tile"><img src="img/logo.png" alt="RSCI logo"></div>
+        <div class="co">Rivera-Sarvida<br>Construction Inc.</div>
+      </div>
+      <nav id="nav" aria-label="Main"></nav>
       <div class="me">
-        <b id="meName"></b><span class="role-tag" id="meRole"></span>
+        <b id="meName"></b>
+        <span class="role" id="meRole"></span>
+        <code id="meDb" title="The MySQL user this session runs its queries as"></code>
         <button class="btn ghost sm" id="logout">Sign out</button>
       </div>
     </aside>
     <main>
       <div class="top">
         <h2 id="title"></h2>
-        <label class="sim">
-          <input type="checkbox" id="simFail"> Simulate failure before COMMIT
-        </label>
+        <label class="sim"><input type="checkbox" id="simFail"> Simulate failure before COMMIT</label>
       </div>
-      <div id="view"></div>
+      <div id="view" aria-live="polite"></div>
     </main>
   </div>
-  <script src="js/app.js"></script>
+  <script>
+    // Signed out: go to the sign-in page without running the app script.
+    if (!sessionStorage.getItem('token')) location.replace('index.html');
+    else { const s = document.createElement('script'); s.src = 'js/app.js'; document.body.appendChild(s); }
+  </script>
 </body>
 </html>

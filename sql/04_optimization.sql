@@ -4,7 +4,8 @@
 -- ============================================================================
 USE rsci_sql;
 
--- BEFORE: no index on expense_date -> expect type=ALL (full table scan, ~100k rows).
+-- BEFORE: no index on expense_date. Expect type=ALL or type=index on the foreign-key index
+-- (both examine every row, ~100,000) with Extra=Using where.
 EXPLAIN
 SELECT project_id, COUNT(*) AS entries, SUM(amount) AS total
 FROM expenses

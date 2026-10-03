@@ -4,7 +4,7 @@ const { withTransaction, logActivity, HttpError } = require('../db');
 const { wrap, positive } = require('../util');
 const { stockIn, stockOut } = require('../stock');
 
-const VIEWERS = ['boss', 'om', 'inventory'];
+const VIEWERS = ['boss', 'om', 'inventory', 'admin'];
 const guard = (req) => {
   if (!VIEWERS.includes(req.user.role)) throw new HttpError(403, 'Not allowed to view inventory');
 };

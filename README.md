@@ -4,6 +4,9 @@ IT EL 5 - Advanced Information Management. A scaled-down copy of the RSCI procur
 ticketing website (`../rsci-ticketing`, Firebase) rebuilt on **MySQL** with a plain HTML/JS
 frontend and a small Express API. No Firebase.
 
+Presenting this? Read **[PRESENTATION_SCRIPT.md](PRESENTATION_SCRIPT.md)** (speaker script, front end / back end explanation, demo order, likely questions).
+The visual direction is recorded in **[DESIGN.md](DESIGN.md)**.
+
 ## 1. Project context (Criterion 1)
 
 **Background.** Rivera-Sarvida Construction Inc. replaces QuickBooks-plus-paper with a website
@@ -12,7 +15,7 @@ that follows a material request from the site engineer to stock in the warehouse
 **Objectives.** One traceable pipeline, no double approvals or double payments, sensitive
 supplier and payment data protected, and each staff role limited to what its job needs.
 
-**Users (6 roles).** Engineer, Boss, OM, PO Officer, Accountant, Inventory.
+**Users (7 roles).** Engineer, Boss, OM, PO Officer, Accountant, Inventory, and a read-only Administrator who oversees every action but cannot act or see secrets.
 
 **Business process.**
 
@@ -47,7 +50,7 @@ Every role can file a ticket (Requests -> Submit a ticket); it always starts at 
 A rejected ticket shows the Boss's reason and its submitter can **Edit & resubmit** it. The Inventory role can **Stock in** and **Stock out** (Inventory page) besides receiving P.O.s.
 
 Demo logins, password `Password123!` for all: `boss@rsci.test`, `om@rsci.test`,
-`engineer@rsci.test`, `po@rsci.test`, `accountant@rsci.test`, `inventory@rsci.test`.
+`engineer@rsci.test`, `po@rsci.test`, `accountant@rsci.test`, `inventory@rsci.test`, `admin@rsci.test`.
 The login page has one-click buttons. Open each role in a separate browser profile or
 private window, because the session is per tab.
 

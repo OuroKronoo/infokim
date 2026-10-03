@@ -51,6 +51,7 @@ function parseTicketBody(body) {
 }
 
 router.post('/', wrap(async (req, res) => {
+  if (req.user.role === 'admin') throw new HttpError(403, 'The administrator role is read-only');
   const t = parseTicketBody(req.body);
   const id = await withTransaction(req.db, async (conn) => {
     const [r] = await conn.query(
@@ -68,6 +69,7 @@ router.post('/', wrap(async (req, res) => {
 // The stored procedure verifies ownership and status and replaces the header; the new items
 // are inserted in the same transaction, so a failure leaves the rejected ticket untouched.
 router.post('/:id/resubmit', wrap(async (req, res) => {
+  if (req.user.role === 'admin') throw new HttpError(403, 'The administrator role is read-only');
   const t = parseTicketBody(req.body);
   await withTransaction(req.db, async (conn) => {
     await conn.query('CALL resubmit_ticket(?, ?, ?, ?, ?, ?)',
