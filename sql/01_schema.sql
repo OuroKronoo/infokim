@@ -1,11 +1,54 @@
 -- ============================================================================
 -- RSCI SQL prototype - schema (3NF)
--- Criterion 1 (project context) + Criterion 2 (ACID needs InnoDB + FKs)
--- Runs on MySQL 8 and MariaDB 10.4 (XAMPP).
+-- Runs on MySQL 8 and MariaDB 10.4 (XAMPP). Re-run with: npm run setup-db
+--
+-- HOW THE EVALUATION FORM (7 criteria) MAPS TO THE BACKEND (everything below lives in
+-- the database / server, not in the browser):
+--   1 Project context ........ this file: tables, PK/FK, UNIQUE, CHECK (3NF design)
+--   2 Transaction mgmt ....... START TRANSACTION / COMMIT / ROLLBACK, SAVEPOINT, isolation levels,
+--                              EXIT HANDLER + RESIGNAL  -> procedure sp_create_po (bottom of this file),
+--                              server/db.js withTransaction, and sql/03_transactions_demo.sql
+--   3 Database encryption .... *_enc VARBINARY columns (AES_ENCRYPT / AES_DECRYPT), bcrypt password_hash
+--                              -> server/db.js encrypt()/decrypt(), sql/06_encryption_demo.sql
+--   4 Authorization .......... one MySQL user per role + GRANT/REVOKE, least privilege, column grants
+--                              -> sql/02_roles.sql, sql/05_revoke_demo.sql, sql/07_roles_demo.sql
+--   5 Query optimization ..... indexes, EXPLAIN / ANALYZE, query rewriting, efficient joins, partitioning
+--                              -> sql/04_optimization.sql
+--   6 Integration ............ server/ (Express API) + public/ (web pages) call exactly these objects
+--   7 Presentation ........... README.md and PRESENTATION_SCRIPT.md
+--
+-- TO ADD OR CHANGE A ROLE (it shows up on the web registration form automatically):
+--   a) add / edit its row in the `roles` table below  (set self_register = 0 to hide it from the form)
+--   b) add its MySQL account + GRANTs in sql/02_roles.sql  (account name must be rsci_<code>)
+--   c) if it needs its own screens, add it to the VIEWS list in public/js/app.js
+--   d) run: npm run setup-db
 -- ============================================================================
 DROP DATABASE IF EXISTS rsci_sql;
 CREATE DATABASE rsci_sql CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 USE rsci_sql;
+
+-- Role catalogue (Criterion 4). This is the single place that defines which roles exist.
+-- The web registration form reads this table (GET /api/roles); users.role must match a code here.
+--   code          = short name; the MySQL account for it is rsci_<code> (see sql/02_roles.sql)
+--   self_register = 1: people may pick this role when they create an account on the website
+--                   0: hidden from the form (only a DBA can create such users)
+--   sort_order    = order shown in the dropdown
+CREATE TABLE roles (
+  code          VARCHAR(20)  NOT NULL PRIMARY KEY,
+  label         VARCHAR(60)  NOT NULL,
+  description   VARCHAR(200) NOT NULL,
+  self_register TINYINT(1)   NOT NULL DEFAULT 1,
+  sort_order    TINYINT UNSIGNED NOT NULL DEFAULT 0
+) ENGINE=InnoDB;
+
+INSERT INTO roles (code, label, description, self_register, sort_order) VALUES
+  ('engineer',   'Engineer',           'Files material requests (tickets) for a project',                1, 1),
+  ('boss',       'Boss',               'Approves or rejects requests and purchase orders',                1, 2),
+  ('om',         'Operations Manager', 'Approves or rejects purchase orders; read-only elsewhere',        1, 3),
+  ('po_officer', 'PO Officer',         'Creates purchase orders and vendors',                             1, 4),
+  ('accountant', 'Accountant',         'Records payments and posts them to expenses',                     1, 5),
+  ('inventory',  'Inventory',          'Receives delivered goods and moves stock',                        1, 6),
+  ('admin',      'Administrator',      'Read-only oversight of every action; cannot act or see secrets',  1, 7);
 
 -- Staff accounts. password_hash = bcrypt (one-way). phone_enc = AES (reversible).
 CREATE TABLE users (
@@ -13,9 +56,10 @@ CREATE TABLE users (
   name          VARCHAR(100)  NOT NULL,
   email         VARCHAR(150)  NOT NULL UNIQUE,
   password_hash VARCHAR(100)  NOT NULL,
-  role          ENUM('boss','om','engineer','po_officer','accountant','inventory','admin') NOT NULL,
+  role          VARCHAR(20)   NOT NULL,
   phone_enc     VARBINARY(255) NULL,
-  created_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+  created_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_u_role FOREIGN KEY (role) REFERENCES roles(code)
 ) ENGINE=InnoDB;
 
 CREATE TABLE projects (
@@ -182,4 +226,47 @@ BEGIN
          status = 'Pending Boss Approval', decided_by = NULL, reject_reason = NULL,
          resubmit_count = resubmit_count + 1, resubmitted_at = NOW()
    WHERE id = p_ticket;
+END;
+
+-- ----------------------------------------------------------------------------
+-- Criterion 2 - the whole "create a purchase order" transaction written in SQL only.
+-- The Express route (server/routes/purchaseOrders.js) does the same steps with
+-- withTransaction(); this procedure shows that the database alone can guarantee them.
+--   * Atomicity     : START TRANSACTION ... COMMIT, or ROLLBACK if anything fails
+--   * Error handling: DECLARE EXIT HANDLER catches any SQL error, rolls back, then RESIGNAL
+--                     re-raises it so the caller still sees the real error (e.g. 1062 duplicate P.O. no.)
+--   * Consistency   : SIGNAL refuses a ticket that is not 'Approved for PO'; FKs/CHECKs do the rest
+--   * Isolation     : the guarded UPDATE takes a row lock, so two people cannot create two P.O.s for one ticket
+-- SQL SECURITY INVOKER = runs with the caller's own privileges (least privilege is not bypassed).
+-- Try it: sql/03_transactions_demo.sql, section H.
+-- ----------------------------------------------------------------------------
+DROP PROCEDURE IF EXISTS sp_create_po;
+CREATE PROCEDURE sp_create_po(
+  IN p_po_no VARCHAR(30), IN p_ticket INT UNSIGNED, IN p_vendor INT UNSIGNED,
+  IN p_user INT UNSIGNED, IN p_unit_price DECIMAL(12,2))
+SQL SECURITY INVOKER
+BEGIN
+  DECLARE v_total DECIMAL(14,2);
+  DECLARE v_po INT UNSIGNED;
+  DECLARE EXIT HANDLER FOR SQLEXCEPTION
+  BEGIN
+    ROLLBACK;
+    RESIGNAL;
+  END;
+
+  START TRANSACTION;
+    UPDATE tickets SET status = 'PO Created' WHERE id = p_ticket AND status = 'Approved for PO';
+    IF ROW_COUNT() = 0 THEN
+      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Ticket is not approved for a P.O.';
+    END IF;
+    SELECT SUM(qty) * p_unit_price INTO v_total FROM ticket_items WHERE ticket_id = p_ticket;
+    INSERT INTO purchase_orders (po_no, ticket_id, vendor_id, created_by, total)
+    VALUES (p_po_no, p_ticket, p_vendor, p_user, IFNULL(v_total, 0));
+    SET v_po = LAST_INSERT_ID();
+    INSERT INTO po_items (po_id, description, qty, unit, unit_price)
+      SELECT v_po, description, qty, unit, p_unit_price FROM ticket_items WHERE ticket_id = p_ticket;
+    INSERT INTO activity_log (user_id, action, entity, entity_id, detail)
+    VALUES (p_user, 'PO_CREATED', 'purchase_order', v_po, CONCAT(p_po_no, ' total ', IFNULL(v_total, 0)));
+  COMMIT;
+  SELECT v_po AS po_id, v_total AS total;
 END;

@@ -49,6 +49,12 @@ npm start                 # http://localhost:3000
 Every role can file a ticket (Requests -> Submit a ticket); it always starts at Pending Boss Approval, as in the live site.
 A rejected ticket shows the Boss's reason and its submitter can **Edit & resubmit** it. The Inventory role can **Stock in** and **Stock out** (Inventory page) besides receiving P.O.s.
 
+**Creating more accounts.** The sign-in page has a **Create an account** link. Pick a name, email, optional phone
+(stored encrypted), role and password; you are signed in as that role straight away. The role list comes from the
+`roles` table in `sql/01_schema.sql`, so to add, rename or hide a role edit that table (set `self_register = 0` to
+hide it), add its `rsci_<code>` account and grants in `sql/02_roles.sql`, then run `npm run setup-db`.
+The registration page runs as the restricted `rsci_auth` DB user, which may only insert the user columns shown in `02_roles.sql`.
+
 Demo logins, password `Password123!` for all: `boss@rsci.test`, `om@rsci.test`,
 `engineer@rsci.test`, `po@rsci.test`, `accountant@rsci.test`, `inventory@rsci.test`, `admin@rsci.test`.
 The login page has one-click buttons. Open each role in a separate browser profile or
@@ -58,10 +64,10 @@ private window, because the session is per tab.
 
 | # | Criterion | Code | Live demo |
 |---|-----------|------|-----------|
-| 2 | Transaction management | `server/db.js` `withTransaction`, `server/routes/purchaseOrders.js`, `sql/03_transactions_demo.sql` | Tick **Simulate failure before COMMIT**, then create a P.O. / confirm purchase / receive. Everything is undone and the toast says ROLLED BACK. Reuse a P.O. number to trigger a duplicate-key rollback. Click a decision button twice: the second gets 409 (isolation via guarded `UPDATE ... WHERE status=`). |
+| 2 | Transaction management | `server/db.js` `withTransaction`, `server/routes/purchaseOrders.js`, `sql/03_transactions_demo.sql` (COMMIT, ROLLBACK, SAVEPOINT, isolation, `sp_create_po` with an error handler) | Tick **Simulate failure before COMMIT**, then create a P.O. / confirm purchase / receive. Everything is undone and the toast says ROLLED BACK. Reuse a P.O. number to trigger a duplicate-key rollback. Click a decision button twice: the second gets 409 (isolation via guarded `UPDATE ... WHERE status=`). |
 | 3 | Database encryption | `server/db.js` `encrypt/decrypt`, `sql/01_schema.sql` (`VARBINARY` columns), `sql/06_encryption_demo.sql` | Run `sql/06_encryption_demo.sql`: stored hex next to the decrypted value for vendor TIN, check numbers and phone numbers. Passwords are bcrypt-hashed. The key lives in `.env`, not the database. |
-| 4 | Authorization and privileges | `sql/02_roles.sql`, `sql/05_revoke_demo.sql`, `server/db.js` `poolFor` | The API connects as a **different MySQL user per role**, so MySQL enforces access. Column-level grants hide `tin_enc` from Engineer/OM/Inventory. No role has `DELETE` (submitters edit a rejected ticket only through the `resubmit_ticket` stored procedure), and `activity_log` is insert-only. Run `sql/05_revoke_demo.sql` to `SHOW GRANTS` and `REVOKE` live. |
-| 5 | Query optimization | `sql/04_optimization.sql` | Run `sql/04_optimization.sql`: `EXPLAIN` without the index (full scan), create the covering index, `EXPLAIN` again (range scan), plus the `YEAR()/MONTH()` form that defeats the index. |
+| 4 | Authorization and privileges | `sql/02_roles.sql`, `sql/05_revoke_demo.sql`, `sql/07_roles_demo.sql` (CREATE ROLE), `server/db.js` `poolFor` | The API connects as a **different MySQL user per role**, so MySQL enforces access. Column-level grants hide `tin_enc` from Engineer/OM/Inventory. No role has `DELETE` (submitters edit a rejected ticket only through the `resubmit_ticket` stored procedure), and `activity_log` is insert-only. Run `sql/05_revoke_demo.sql` to `SHOW GRANTS` and `REVOKE` live. |
+| 5 | Query optimization | `sql/04_optimization.sql` (indexing, EXPLAIN/ANALYZE, query rewriting, efficient joins, partitioning) | Run `sql/04_optimization.sql`: `EXPLAIN` without the index (full scan), create the covering index, `EXPLAIN` again (range scan), plus the `YEAR()/MONTH()` form that defeats the index. |
 | 6 | Integration | `server/`, `public/` | The whole pipeline above runs end to end from the UI. |
 
 ## 4. Suggested presentation order

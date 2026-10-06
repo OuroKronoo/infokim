@@ -65,3 +65,51 @@ SELECT id, status, resubmit_count, reject_reason FROM tickets WHERE id = 1;
 
 -- Someone else (user 7) trying the same call is refused inside the procedure:
 -- CALL resubmit_ticket(1, 7, 1, 'normal', '2026-12-01', 'x');   -- ERROR 1644 Only the submitter ...
+
+
+-- ============================================================================
+-- MORE FOR CRITERION 2 - everything the evaluation form asks for, in plain SQL.
+--   ACID ........ A = Atomicity (B above), C = Consistency (CHECK/FK/UNIQUE reject bad data, F below),
+--                 I = Isolation (C above, G below), D = Durability (InnoDB redo log; COMMIT survives a restart)
+--   COMMIT / ROLLBACK ........ A, B, D above
+--   Handling errors .......... H below (EXIT HANDLER + RESIGNAL) and server/db.js withTransaction
+-- ============================================================================
+
+-- F) SAVEPOINT: undo only part of a transaction, keep the rest.
+--    Also shows Consistency: the CHECK (qty > 0) constraint rejects the bad row.
+START TRANSACTION;
+  INSERT INTO inventory (item_name, unit, qty_on_hand) VALUES ('Demo item A', 'pc', 10);
+  SAVEPOINT after_item_a;
+  -- This fails with a CHECK-constraint error (MariaDB 10.4 / MySQL 8.0.16+): quantity cannot be negative.
+  -- INSERT INTO inventory (item_name, unit, qty_on_hand) VALUES ('Demo item B', 'pc', -5);
+  INSERT INTO inventory (item_name, unit, qty_on_hand) VALUES ('Demo item B', 'pc', 3);
+  ROLLBACK TO SAVEPOINT after_item_a;        -- item B is undone, item A is still pending
+COMMIT;                                      -- only item A is saved
+SELECT item_name, qty_on_hand FROM inventory WHERE item_name LIKE 'Demo item%';
+DELETE FROM inventory WHERE item_name LIKE 'Demo item%';   -- clean up (run as root; app roles have no DELETE)
+
+-- G) Isolation levels. InnoDB default = REPEATABLE READ: a transaction keeps seeing the same snapshot.
+--    Open two sessions (two phpMyAdmin tabs or two Workbench windows):
+--    Session 1: SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ;
+--               START TRANSACTION;
+--               SELECT qty_on_hand FROM inventory WHERE id = 1;          -- e.g. 120
+--    Session 2: UPDATE inventory SET qty_on_hand = qty_on_hand - 1 WHERE id = 1;   (autocommit = saved)
+--    Session 1: SELECT qty_on_hand FROM inventory WHERE id = 1;          -- still 120 (repeatable read)
+--               COMMIT;
+--               SELECT qty_on_hand FROM inventory WHERE id = 1;          -- now 119
+--    Use READ COMMITTED instead and the second SELECT would already show 119 (non-repeatable read).
+--    SELECT @@transaction_isolation;   -- MySQL 8.   On MariaDB use: SELECT @@tx_isolation;
+
+-- H) The whole "create purchase order" transaction as ONE stored procedure (sql/01_schema.sql, sp_create_po).
+--    Run as root here; the PO Officer account rsci_po_officer has EXECUTE on it too.
+--    1) Success: ticket 4 becomes 'PO Created', the P.O., its items and the log row are all saved.
+CALL sp_create_po('PO-DEMO-002', 4, 1, 4, 85.50);
+SELECT id, status FROM tickets WHERE id = 4;
+SELECT po_no, status, total FROM purchase_orders WHERE po_no = 'PO-DEMO-002';
+--    2) Failure: the same P.O. number again. The handler ROLLS BACK and re-raises error 1062, so the
+--       ticket flip is undone as well. (Ticket 3 needs to be 'Approved for PO': run this before section A,
+--       or reset with npm run setup-db.)
+-- CALL sp_create_po('PO-DEMO-002', 3, 1, 4, 85.50);        -- ERROR 1062 duplicate entry, nothing saved
+SELECT id, status FROM tickets WHERE id = 3;                 -- still 'Approved for PO' if it was before
+--    3) Consistency check: a ticket that is not approved is refused with our own message (SIGNAL).
+-- CALL sp_create_po('PO-DEMO-003', 4, 1, 4, 10);           -- ERROR 1644 Ticket is not approved for a P.O.

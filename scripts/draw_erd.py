@@ -5,7 +5,8 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
 
 T = {  # name: (x, y, [columns])  PK first; * = encrypted column
-    'users':           (0.2, 7.0, ['id PK', 'name', 'email', 'password_hash', 'role', 'phone_enc *']),
+    'roles':           (0.2, 9.4, ['code PK', 'label', 'description', 'self_register', 'sort_order']),
+    'users':           (0.2, 7.0, ['id PK', 'name', 'email', 'password_hash', 'role FK', 'phone_enc *']),
     'projects':        (4.2, 7.9, ['id PK', 'company', 'name']),
     'vendors':         (8.2, 7.9, ['id PK', 'name', 'contact', 'tin_enc *']),
     'tickets':         (4.2, 5.0, ['id PK', 'project_id FK', 'requested_by FK', 'decided_by FK', 'status', 'urgency']),
@@ -18,7 +19,7 @@ T = {  # name: (x, y, [columns])  PK first; * = encrypted column
     'inventory_log':   (4.2, 1.2, ['id PK', 'inventory_id FK', 'po_id FK', 'project_id FK', 'change_qty', 'created_by FK']),
     'activity_log':    (12.2, 8.0, ['id PK', 'user_id FK', 'action', 'entity', 'created_at']),
 }
-FK = [('tickets', 'projects'), ('tickets', 'users'), ('ticket_items', 'tickets'), ('purchase_orders', 'tickets'),
+FK = [('users', 'roles'), ('tickets', 'projects'), ('tickets', 'users'), ('ticket_items', 'tickets'), ('purchase_orders', 'tickets'),
       ('purchase_orders', 'vendors'), ('po_items', 'purchase_orders'), ('payments', 'purchase_orders'),
       ('expenses', 'projects'), ('expenses', 'purchase_orders'), ('inventory_log', 'inventory'),
       ('inventory_log', 'purchase_orders'), ('inventory_log', 'projects'), ('activity_log', 'users'),
@@ -61,7 +62,7 @@ for a, b in FK:
                 arrowprops=dict(arrowstyle='-|>', color='#6b7280', lw=1, shrinkA=0, shrinkB=0, connectionstyle='arc3,rad=0.08'))
 ax.text(0.2, -1.2, 'Arrow = foreign key (child -> parent).   Magenta * = encrypted column (AES).', fontsize=9, color='#444')
 ax.set_xlim(0, 15.6)
-ax.set_ylim(-1.5, 8.3)
+ax.set_ylim(-1.5, 9.6)
 ax.axis('off')
 fig.savefig('docs/screenshots/erd.png', dpi=130, bbox_inches='tight', facecolor='white')
 print('ok')

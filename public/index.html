@@ -35,8 +35,28 @@
         <input id="pw" type="password" required autocomplete="current-password">
         <div class="err" id="err" role="alert"></div>
         <button class="btn accent">Sign in</button>
+        <p class="switch">New here? <button type="button" class="linkbtn" id="go-reg">Create an account</button></p>
       </form>
-      <section class="demo" aria-labelledby="demo-h">
+      <form id="rf" hidden>
+        <h2>Create an account</h2>
+        <label for="r-name">Full name</label>
+        <input id="r-name" required maxlength="100" autocomplete="name">
+        <label for="r-email">Email</label>
+        <input id="r-email" type="email" required maxlength="150" autocomplete="username">
+        <label for="r-phone">Phone (optional, stored encrypted)</label>
+        <input id="r-phone" maxlength="30" autocomplete="tel">
+        <label for="r-role">Role</label>
+        <select id="r-role" required></select>
+        <div class="role-note" id="r-note"></div>
+        <label for="r-pw">Password (8 characters or more)</label>
+        <input id="r-pw" type="password" required minlength="8" autocomplete="new-password">
+        <label for="r-pw2">Confirm password</label>
+        <input id="r-pw2" type="password" required minlength="8" autocomplete="new-password">
+        <div class="err" id="r-err" role="alert"></div>
+        <button class="btn accent">Create account</button>
+        <p class="switch">Already have an account? <button type="button" class="linkbtn" id="go-login">Sign in</button></p>
+      </form>
+      <section class="demo" id="demo-box" aria-labelledby="demo-h">
         <h3 id="demo-h">Demo accounts</h3>
         <div class="demo-list" id="demo"></div>
       </section>
@@ -55,6 +75,45 @@
       list.appendChild(b);
     });
     if (sessionStorage.getItem('token')) location.href = 'app.html';
+
+    // ---- Create an account: roles come from the `roles` table in sql/01_schema.sql (GET /api/roles).
+    let roleList = [];
+    const show = (reg) => {
+      f.hidden = reg; rf.hidden = !reg; document.getElementById('demo-box').hidden = reg;
+      document.title = (reg ? 'Create account' : 'Sign in') + ' - RSCI Operations System';
+    };
+    document.getElementById('go-reg').onclick = async () => {
+      show(true);
+      if (roleList.length) return;
+      try {
+        roleList = await (await fetch('/api/roles')).json();
+        const sel = document.getElementById('r-role');
+        sel.innerHTML = '<option value="">Choose your role</option>';
+        roleList.forEach((r) => sel.add(new Option(r.label, r.code)));
+      } catch { document.getElementById('r-err').textContent = 'Could not load the role list'; }
+    };
+    document.getElementById('go-login').onclick = () => show(false);
+    document.getElementById('r-role').onchange = (e) => {
+      const r = roleList.find((x) => x.code === e.target.value);
+      document.getElementById('r-note').textContent = r ? r.description : '';
+    };
+    rf.onsubmit = async (e) => {
+      e.preventDefault();
+      const out = document.getElementById('r-err');
+      out.textContent = '';
+      if (document.getElementById('r-pw').value !== document.getElementById('r-pw2').value) { out.textContent = 'Passwords do not match'; return; }
+      try {
+        const r = await fetch('/api/register', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: document.getElementById('r-name').value, email: document.getElementById('r-email').value,
+            phone: document.getElementById('r-phone').value, role: document.getElementById('r-role').value,
+            password: document.getElementById('r-pw').value }) });
+        const data = await r.json();
+        if (!r.ok) throw new Error(data.error || 'Could not create the account');
+        sessionStorage.setItem('token', data.token);
+        sessionStorage.setItem('user', JSON.stringify(data.user));
+        location.href = 'app.html';
+      } catch (ex) { out.textContent = ex.message; }
+    };
     document.getElementById('f').onsubmit = async (e) => {
       e.preventDefault();
       err.textContent = '';

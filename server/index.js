@@ -1,7 +1,7 @@
 require('dotenv').config();
 const path = require('path');
 const express = require('express');
-const { login, requireAuth } = require('./auth');
+const { login, register, listRoles, requireAuth } = require('./auth');
 const { HttpError } = require('./db');
 
 const app = express();
@@ -11,6 +11,9 @@ app.use(express.static(path.join(__dirname, '..', 'public')));
 const wrap = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 
 app.post('/api/login', wrap(async (req, res) => res.json(await login(req.body.email, req.body.password))));
+
+app.get('/api/roles', wrap(async (req, res) => res.json(await listRoles())));
+app.post('/api/register', wrap(async (req, res) => res.status(201).json(await register(req.body))));
 
 app.use('/api', requireAuth);
 app.get('/api/me', (req, res) => res.json(req.user));

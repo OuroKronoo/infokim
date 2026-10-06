@@ -1,3 +1,21 @@
+-- ============================================================================
+-- Criterion 4 - Authorization and privileges (users, roles, GRANT, REVOKE, least privilege)
+--
+-- Design: every application role in the `roles` table (sql/01_schema.sql) has its own MySQL
+-- ACCOUNT named rsci_<code>. The Express API opens a connection as the account that matches
+-- the logged-in person's role (server/db.js poolFor), so MySQL itself decides what is allowed.
+--
+--   CREATE USER ... IDENTIFIED BY   -> the database users (one per role, plus rsci_auth)
+--   GRANT   <privilege> ON <table>   -> what each user may do
+--   GRANT   <privilege>(<columns>)   -> column-level grants: a user can touch ONLY those columns
+--   REVOKE                           -> take a privilege away again (sql/05_revoke_demo.sql)
+--   Least privilege                  -> nobody has DELETE; secrets (tin_enc, check_no_enc, phone_enc,
+--                                       password_hash) are visible only to the roles that must see them
+--   Real MySQL ROLE objects          -> sql/07_roles_demo.sql
+--
+-- rsci_auth is the account used by the login and registration pages. It can read the login
+-- columns and the role catalogue, INSERT a new user and write the audit log. Nothing else.
+-- ============================================================================
 USE rsci_sql;
 DROP USER IF EXISTS 'rsci_auth' @'%';
 DROP USER IF EXISTS 'rsci_engineer' @'%';
@@ -135,4 +153,12 @@ GRANT EXECUTE ON PROCEDURE rsci_sql.resubmit_ticket TO 'rsci_om' @'%';
 GRANT EXECUTE ON PROCEDURE rsci_sql.resubmit_ticket TO 'rsci_po_officer' @'%';
 GRANT EXECUTE ON PROCEDURE rsci_sql.resubmit_ticket TO 'rsci_accountant' @'%';
 GRANT EXECUTE ON PROCEDURE rsci_sql.resubmit_ticket TO 'rsci_inventory' @'%';
+-- ---- AUTH (registration page): create a user. Only these columns can be written, so a new
+-- account can never set id or created_at; the role must exist in `roles` (foreign key).
+GRANT SELECT ON rsci_sql.roles TO 'rsci_auth' @'%';
+GRANT INSERT (name, email, password_hash, role, phone_enc) ON rsci_sql.users TO 'rsci_auth' @'%';
+GRANT INSERT ON rsci_sql.activity_log TO 'rsci_auth' @'%';
+-- ---- Criterion 2: the all-SQL purchase-order transaction (sql/01_schema.sql, sp_create_po).
+-- It runs as the caller, so it only works for roles that already hold the table privileges.
+GRANT EXECUTE ON PROCEDURE rsci_sql.sp_create_po TO 'rsci_po_officer' @'%';
 FLUSH PRIVILEGES;

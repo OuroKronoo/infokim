@@ -117,7 +117,8 @@ TBL([['Role', 'What the role does', 'Database account'],
      ['Inventory', 'Receives delivered goods; stocks items in and out', '`rsci_inventory`'],
      ['Administrator', 'Read-only oversight of every action; cannot act or see secrets', '`rsci_admin`']],
     [W * .22, W * .53, W * .25])
-P('A separate `rsci_auth` account exists only for the login lookup.')
+P('A separate `rsci_auth` account exists only for the login and registration pages.')
+P('New accounts are created on the website. The registration form asks for a name, email, optional phone, role and password. The list of roles comes from the `roles` table in `sql/01_schema.sql`, so adding, renaming or hiding a role is a change to that SQL file (`self_register = 0` hides a role from the form), followed by `npm run setup-db`.')
 H2('Business Processes')
 BUL(['The engineer files a request. It starts as *Pending Boss Approval*.',
      'The Boss approves it (*Approved for PO*) or rejects it with a reason. The submitter can edit and resubmit a rejected ticket.',
@@ -133,7 +134,8 @@ BUL(['**Relational integrity:** foreign keys between all linked tables, `UNIQUE`
      'Per-role privileges: one MySQL account per role with column-level grants (Section 4).',
      'Fast reports on a large ledger: a covering index on `expenses` (Section 5).'])
 TBL([['Table', 'Purpose', 'Key relationships'],
-     ['`users`', 'Staff accounts; bcrypt password hash, encrypted phone', 'Referenced by tickets, P.O.s, payments, logs'],
+     ['`roles`', 'Role catalogue: code, label, description, whether it can be chosen on the registration form', 'Referenced by `users.role`'],
+     ['`users`', 'Staff accounts; bcrypt password hash, encrypted phone', '`roles`; referenced by tickets, P.O.s, payments, logs'],
      ['`projects`', 'Company and project names, unique together', 'Referenced by tickets, expenses, inventory log'],
      ['`vendors`', 'Suppliers; encrypted TIN', 'Referenced by purchase orders'],
      ['`tickets`', 'Material requests and their status', '`projects`, `users` (requester, decider)'],
@@ -148,7 +150,7 @@ TBL([['Table', 'Purpose', 'Key relationships'],
     [W * .22, W * .43, W * .35])
 P('The schema is in `sql/01_schema.sql`.')
 IMG('erd', 'Figure 1. Entity relationship diagram of the `rsci_sql` database.', 330)
-IMG('tables', 'Figure 2. The 12 tables of `rsci_sql` in phpMyAdmin (InnoDB, utf8mb4).', 300)
+IMG('tables', 'Figure 2. The 13 tables of `rsci_sql` in phpMyAdmin (InnoDB, utf8mb4).', 300)
 
 # ---------------- 2 ----------------
 H1('2.&nbsp;&nbsp;&nbsp;Transaction Management')
@@ -180,6 +182,12 @@ BUL(['Atomicity. A duplicate P.O. number raises error 1062 on the insert. The ea
      'The first session takes the row lock. A second approver waits, then sees 0 rows affected, and the API returns HTTP 409. '
      'A P.O. therefore cannot be approved twice or paid twice.',
      'Durability. InnoDB writes committed changes to its redo log, so they survive a server restart.'])
+H2('Savepoints, Isolation Levels and Error Handling in SQL')
+BUL(['SAVEPOINT. A transaction can undo part of its work: `ROLLBACK TO SAVEPOINT after_item_a` removes the second insert and keeps the first, and COMMIT saves only what remains.',
+     'Isolation levels. InnoDB uses REPEATABLE READ: a transaction keeps seeing the same stock figure even after another session commits a change. With READ COMMITTED the second read would already show the new value. The two-session script is in `sql/03_transactions_demo.sql`.',
+     'Error handling. The stored procedure `sp_create_po` runs the whole purchase-order transaction inside MySQL. `DECLARE EXIT HANDLER FOR SQLEXCEPTION` rolls back and `RESIGNAL` re-raises the original error, so the caller still sees it. `SIGNAL` refuses a ticket that is not *Approved for PO* with a clear message.'])
+CODE("""CALL sp_create_po('PO-DEMO-002', 4, 1, 4, 85.50);   -- commits: ticket, P.O., items and log together
+CALL sp_create_po('PO-DEMO-002', 3, 1, 4, 85.50);   -- ERROR 1062: handler rolls back, ticket 3 unchanged""")
 H2('Stock Cannot Go Below Zero')
 P('The guard sits in the `WHERE` clause. Releasing 30 bags of cement affects 1 row and is committed. Releasing 99,999 bags affects 0 rows, '
   'is rolled back, and writes no log row.')
@@ -222,7 +230,7 @@ P('MySQL itself enforces who can do what. The API opens a connection as a differ
   '`server/db.js`), so a bug in the application cannot give a role more access than its grants allow. All accounts and grants are in `sql/02_roles.sql`.')
 H2('Privilege Matrix')
 TBL([['Role', 'Can write', 'Can read', 'Cannot see'],
-     ['`rsci_auth`', 'Nothing', '`users` login columns, including `password_hash`', 'Everything else'],
+     ['`rsci_auth`', 'Insert a user (name, email, password_hash, role, phone_enc only) and an audit-log row', '`users` login columns, including `password_hash`; `roles`', 'Everything else'],
      ['`rsci_engineer`', 'Insert tickets and items', 'Projects, inventory, vendor name and contact', '`tin_enc`, payments, expenses'],
      ['`rsci_boss`', 'Insert projects, tickets; update ticket `status`, `decided_by`, `reject_reason`; update P.O. `status`, `decided_by`', 'All financial tables, including payments', 'Nothing hidden from the owner'],
      ['`rsci_om`', 'Update P.O. `status`, `decided_by`', 'P.O.s, expenses, inventory, activity log', '`tin_enc`, payments'],
@@ -239,6 +247,19 @@ BUL(['Least privilege. Each account gets only the statements and tables its job 
      'which runs as `SQL SECURITY DEFINER` and checks inside that the caller owns the ticket and that it is in *Rejected by Boss*. Any other caller gets error 1644.',
      'Append-only audit trail. Most roles have only `INSERT` on `activity_log`, so nobody can alter or erase their own actions.',
      'Separation of duties. The Boss approves but does not pay. The Accountant pays but does not approve. The Administrator sees everything but changes nothing.'])
+H2('Account Registration and Role Configuration')
+P('The registration page runs as `rsci_auth`. Its grant lists the only columns it may write, so a new account cannot set its own id or creation date: '
+  '`GRANT INSERT (name, email, password_hash, role, phone_enc) ON users TO rsci_auth`. The role must exist in `roles` because `users.role` is a foreign key. '
+  'The user row and its audit-log entry are saved in one transaction. After registering, the person is signed in through the MySQL account that matches the chosen role, '
+  'so the same grants apply to new accounts as to the seeded ones.')
+P('Self-registration is for demonstration. A real system would hide the Boss and Administrator roles from the form (`self_register = 0`) and let an administrator assign them.')
+H2('MySQL Roles')
+P('Besides one account per application role, `sql/07_roles_demo.sql` shows a real MySQL role object: privileges are granted once to a role, the role is granted to users, and a REVOKE on the role changes every member at once.')
+CODE("""CREATE ROLE r_site_viewer;
+GRANT SELECT ON rsci_sql.projects  TO r_site_viewer;
+GRANT SELECT ON rsci_sql.inventory TO r_site_viewer;
+GRANT r_site_viewer TO 'demo_viewer'@'localhost';
+REVOKE SELECT ON rsci_sql.inventory FROM r_site_viewer;   -- every member loses it""")
 H2('REVOKE Demonstration')
 P('`sql/05_revoke_demo.sql` is run as root while the OM is logged in to the application:')
 CODE("""SHOW GRANTS FOR 'rsci_om'@'%';
@@ -262,7 +283,7 @@ TBL([['', 'Before the index', 'After the index'],
      ['Index available', 'Only the foreign-key indexes; none on `expense_date`', '`idx_expenses_date_proj_amt (expense_date, project_id, amount)`'],
      ['`type`', '`index` (scans the whole foreign-key index `fk_e_project`)', '`range`'],
      ['`Extra`', '`Using where`', '`Using where; Using index` (covering), plus `Using temporary; Using filesort` for the GROUP BY'],
-     ['Rows examined', '99,730', '4,840 (about 5%)']],
+     ['Rows examined', '99,809', '4,791 (about 5%)']],
     [W * .22, W * .38, W * .40])
 P('The figures above come from `EXPLAIN` run in phpMyAdmin on the seeded database (Figures 7 and 8).')
 CODE("CREATE INDEX idx_expenses_date_proj_amt ON expenses (expense_date, project_id, amount);")
@@ -275,8 +296,29 @@ P('Wrapping the indexed column in a function defeats the index, because MySQL mu
 CODE("WHERE YEAR(expense_date) = 2026 AND MONTH(expense_date) = 3   -- not sargable")
 P('The script runs this form too, so the plan can be compared with the range form. The index can be dropped with '
   '`DROP INDEX idx_expenses_date_proj_amt ON expenses;` to repeat the demonstration.')
-IMG('explain_before', 'Figure 7. EXPLAIN before the index: `type = index`, 99,730 rows examined.', 200)
-IMG('explain_after', 'Figure 8. EXPLAIN after the index: `type = range`, key `idx_expenses_date_proj_amt`, 4,840 rows examined.', 200)
+IMG('explain_before', 'Figure 7. EXPLAIN before the index: `type = index`, 99,809 rows examined.', 200)
+IMG('explain_after', 'Figure 8. EXPLAIN after the index: `type = range`, key `idx_expenses_date_proj_amt`, 4,791 rows examined.', 200)
+H2('Measured Timings: ANALYZE')
+P('`EXPLAIN` only predicts. On MariaDB, `ANALYZE SELECT ...` runs the query and adds measured columns (`r_rows`, `r_filtered`). '
+  'On MySQL 8.0.18 or later the same thing is `EXPLAIN ANALYZE SELECT ...`, kept as a comment in `sql/04_optimization.sql`. '
+  'Here the estimate (4,791) and the measured rows (4,791) agree.')
+IMG('analyze', 'Figure 9. `ANALYZE` after the index: estimated `rows` and measured `r_rows` are both 4,791.', 200)
+H2('Query Rewriting')
+P('The same month can be asked two ways. `WHERE YEAR(expense_date) = 2026 AND MONTH(expense_date) = 3` hides the column inside functions, so MySQL must compute them for every row. '
+  '`WHERE expense_date >= \'2026-03-01\' AND expense_date < \'2026-04-01\'` compares the bare column and can use the index.')
+H2('Efficient Joins')
+P('To report totals per project name, a correlated subquery runs once per project. The faster form aggregates the 100,000-row table once through the index and then joins the few summary rows '
+  'to `projects` on its primary key. Joins are made on indexed columns, and only the needed columns are selected.')
+CODE("""SELECT p.company, p.name, s.entries, s.total
+FROM (SELECT project_id, COUNT(*) AS entries, SUM(amount) AS total
+        FROM expenses
+       WHERE expense_date BETWEEN '2026-03-01' AND '2026-03-31'
+       GROUP BY project_id) AS s
+JOIN projects p ON p.id = s.project_id;""")
+H2('Partitioning')
+P('A demo copy of the ledger, `expenses_part`, is partitioned by year with `PARTITION BY RANGE (YEAR(expense_date))`. A query for one month reads only the partition for that year '
+  '(partition pruning). A partitioned InnoDB table cannot have foreign keys and the partition column must be in the primary key, so the live `expenses` table stays unpartitioned.')
+IMG('partition', 'Figure 10. `EXPLAIN PARTITIONS`: only partition `p2026` is read for a March 2026 query.', 200)
 
 
 def header(c, d):
