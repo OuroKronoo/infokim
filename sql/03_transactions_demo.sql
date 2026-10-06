@@ -40,33 +40,64 @@ WHERE id = 4;
 --    Session 1: COMMIT;   -- Session 2 resumes: 0 rows affected
 -- D) Stock out never goes below zero: the guard is in the WHERE clause.
 --    Item 1 (Cement 40kg) has 120 bags after `npm run setup-db`.
+-- kim diwas ksdasd
 START TRANSACTION;
-  UPDATE inventory SET qty_on_hand = qty_on_hand - 30 WHERE id = 1 AND qty_on_hand >= 30;   -- 1 row affected
-  INSERT INTO inventory_log (inventory_id, project_id, change_qty, reason, created_by)
-  VALUES (1, 1, -30, 'Released to site', 6);
+UPDATE inventory
+SET qty_on_hand = qty_on_hand - 30
+WHERE id = 1
+  AND qty_on_hand >= 30;
+-- 1 row affected
+INSERT INTO inventory_log (
+    inventory_id,
+    project_id,
+    change_qty,
+    reason,
+    created_by
+  )
+VALUES (1, 1, -30, 'Released to site', 6);
 COMMIT;
-
 START TRANSACTION;
-  UPDATE inventory SET qty_on_hand = qty_on_hand - 99999 WHERE id = 1 AND qty_on_hand >= 99999;  -- 0 rows affected
-ROLLBACK;                                      -- nothing changed, no log row written
-SELECT id, item_name, qty_on_hand FROM inventory WHERE id = 1;
-
+UPDATE inventory
+SET qty_on_hand = qty_on_hand - 99999
+WHERE id = 1
+  AND qty_on_hand >= 99999;
+-- 0 rows affected
+ROLLBACK;
+-- nothing changed, no log row written
+SELECT id,
+  item_name,
+  qty_on_hand
+FROM inventory
+WHERE id = 1;
 -- E) Edit and resubmit a rejected ticket goes through a stored procedure (SQL SECURITY DEFINER),
 --    so submitters need no UPDATE or DELETE on tickets/ticket_items.
 --    First reject ticket 1 as the Boss, then resubmit as its owner (user 3):
-UPDATE tickets SET status = 'Rejected by Boss', decided_by = 1, reject_reason = 'Quantity too high'
-WHERE id = 1 AND status = 'Pending Boss Approval';
-
+UPDATE tickets
+SET status = 'Rejected by Boss',
+  decided_by = 1,
+  reject_reason = 'Quantity too high'
+WHERE id = 1
+  AND status = 'Pending Boss Approval';
 START TRANSACTION;
-  CALL resubmit_ticket(1, 3, 1, 'normal', '2026-12-01', 'Corrected quantities');
-  INSERT INTO ticket_items (ticket_id, description, qty, unit) VALUES (1, 'Cement 40kg', 20, 'bag');
+CALL resubmit_ticket(
+  1,
+  3,
+  1,
+  'normal',
+  '2026-12-01',
+  'Corrected quantities'
+);
+INSERT INTO ticket_items (ticket_id, description, qty, unit)
+VALUES (1, 'Cement 40kg', 20, 'bag');
 COMMIT;
-SELECT id, status, resubmit_count, reject_reason FROM tickets WHERE id = 1;
-
+SELECT id,
+  status,
+  resubmit_count,
+  reject_reason
+FROM tickets
+WHERE id = 1;
 -- Someone else (user 7) trying the same call is refused inside the procedure:
 -- CALL resubmit_ticket(1, 7, 1, 'normal', '2026-12-01', 'x');   -- ERROR 1644 Only the submitter ...
-
-
 -- ============================================================================
 -- MORE FOR CRITERION 2 - everything the evaluation form asks for, in plain SQL.
 --   ACID ........ A = Atomicity (B above), C = Consistency (CHECK/FK/UNIQUE reject bad data, F below),
@@ -74,20 +105,27 @@ SELECT id, status, resubmit_count, reject_reason FROM tickets WHERE id = 1;
 --   COMMIT / ROLLBACK ........ A, B, D above
 --   Handling errors .......... H below (EXIT HANDLER + RESIGNAL) and server/db.js withTransaction
 -- ============================================================================
-
 -- F) SAVEPOINT: undo only part of a transaction, keep the rest.
 --    Also shows Consistency: the CHECK (qty > 0) constraint rejects the bad row.
 START TRANSACTION;
-  INSERT INTO inventory (item_name, unit, qty_on_hand) VALUES ('Demo item A', 'pc', 10);
-  SAVEPOINT after_item_a;
-  -- This fails with a CHECK-constraint error (MariaDB 10.4 / MySQL 8.0.16+): quantity cannot be negative.
-  -- INSERT INTO inventory (item_name, unit, qty_on_hand) VALUES ('Demo item B', 'pc', -5);
-  INSERT INTO inventory (item_name, unit, qty_on_hand) VALUES ('Demo item B', 'pc', 3);
-  ROLLBACK TO SAVEPOINT after_item_a;        -- item B is undone, item A is still pending
-COMMIT;                                      -- only item A is saved
-SELECT item_name, qty_on_hand FROM inventory WHERE item_name LIKE 'Demo item%';
-DELETE FROM inventory WHERE item_name LIKE 'Demo item%';   -- clean up (run as root; app roles have no DELETE)
-
+INSERT INTO inventory (item_name, unit, qty_on_hand)
+VALUES ('Demo item A', 'pc', 10);
+SAVEPOINT after_item_a;
+-- This fails with a CHECK-constraint error (MariaDB 10.4 / MySQL 8.0.16+): quantity cannot be negative.
+-- INSERT INTO inventory (item_name, unit, qty_on_hand) VALUES ('Demo item B', 'pc', -5);
+INSERT INTO inventory (item_name, unit, qty_on_hand)
+VALUES ('Demo item B', 'pc', 3);
+ROLLBACK TO SAVEPOINT after_item_a;
+-- item B is undone, item A is still pending
+COMMIT;
+-- only item A is saved
+SELECT item_name,
+  qty_on_hand
+FROM inventory
+WHERE item_name LIKE 'Demo item%';
+DELETE FROM inventory
+WHERE item_name LIKE 'Demo item%';
+-- clean up (run as root; app roles have no DELETE)
 -- G) Isolation levels. InnoDB default = REPEATABLE READ: a transaction keeps seeing the same snapshot.
 --    Open two sessions (two phpMyAdmin tabs or two Workbench windows):
 --    Session 1: SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ;
@@ -99,17 +137,27 @@ DELETE FROM inventory WHERE item_name LIKE 'Demo item%';   -- clean up (run as r
 --               SELECT qty_on_hand FROM inventory WHERE id = 1;          -- now 119
 --    Use READ COMMITTED instead and the second SELECT would already show 119 (non-repeatable read).
 --    SELECT @@transaction_isolation;   -- MySQL 8.   On MariaDB use: SELECT @@tx_isolation;
-
 -- H) The whole "create purchase order" transaction as ONE stored procedure (sql/01_schema.sql, sp_create_po).
 --    Run as root here; the PO Officer account rsci_po_officer has EXECUTE on it too.
 --    1) Success: ticket 4 becomes 'PO Created', the P.O., its items and the log row are all saved.
 CALL sp_create_po('PO-DEMO-002', 4, 1, 4, 85.50);
-SELECT id, status FROM tickets WHERE id = 4;
-SELECT po_no, status, total FROM purchase_orders WHERE po_no = 'PO-DEMO-002';
+SELECT id,
+  status
+FROM tickets
+WHERE id = 4;
+SELECT po_no,
+  status,
+  total
+FROM purchase_orders
+WHERE po_no = 'PO-DEMO-002';
 --    2) Failure: the same P.O. number again. The handler ROLLS BACK and re-raises error 1062, so the
 --       ticket flip is undone as well. (Ticket 3 needs to be 'Approved for PO': run this before section A,
 --       or reset with npm run setup-db.)
 -- CALL sp_create_po('PO-DEMO-002', 3, 1, 4, 85.50);        -- ERROR 1062 duplicate entry, nothing saved
-SELECT id, status FROM tickets WHERE id = 3;                 -- still 'Approved for PO' if it was before
+SELECT id,
+  status
+FROM tickets
+WHERE id = 3;
+-- still 'Approved for PO' if it was before
 --    3) Consistency check: a ticket that is not approved is refused with our own message (SIGNAL).
 -- CALL sp_create_po('PO-DEMO-003', 4, 1, 4, 10);           -- ERROR 1644 Ticket is not approved for a P.O.
